@@ -95,6 +95,18 @@
       </footer>
     </main>
 
+    <div id="loadingOverlay" class="loading-overlay is-hidden" role="dialog" aria-labelledby="loadingTitle" aria-modal="true">
+      <div class="loading-card">
+        <div class="spinner" aria-hidden="true"></div>
+        <h2 id="loadingTitle">Analyzing image</h2>
+        <p id="loadingMessage" aria-live="polite">Uploading image...</p>
+        <div class="progress-track" aria-hidden="true">
+          <div id="progressFill" class="progress-fill"></div>
+        </div>
+        <strong id="progressPercent">0%</strong>
+      </div>
+    </div>
+
     <script src="config.js"></script>
     <script src="app.js"></script>
   </body>

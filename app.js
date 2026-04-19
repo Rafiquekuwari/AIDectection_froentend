@@ -21,10 +21,46 @@ const summaryReasons = document.querySelector("#summaryReasons");
 const apiBaseUrlInput = document.querySelector("#apiBaseUrlInput");
 const saveApiUrlButton = document.querySelector("#saveApiUrlButton");
 const activeApiUrlText = document.querySelector("#activeApiUrlText");
+const loadingOverlay = document.querySelector("#loadingOverlay");
+const loadingMessage = document.querySelector("#loadingMessage");
+const progressFill = document.querySelector("#progressFill");
+const progressPercent = document.querySelector("#progressPercent");
 
 let selectedFile = null;
 let previewUrl = null;
 let apiBaseUrl = getApiBaseUrl();
+let progressTimer = null;
+let progressValue = 0;
+
+const PROGRESS_MESSAGES = [
+  { min: 0, text: "Uploading image..." },
+  { min: 25, text: "Analyzing image structure..." },
+  { min: 55, text: "Checking edge and boundary signals..." },
+  { min: 82, text: "Finalizing result..." },
+];
+
+const REASON_LABELS = {
+  boundary: "unusual boundary behavior",
+  patch_consistency: "locally consistent synthetic-looking structure",
+  patch_repetition: "repeated fine texture patterns",
+  edge: "unusual edge behavior",
+  noise_rgb: "synthetic-looking noise patterns",
+  frequency: "unusual frequency-domain patterns",
+  texture: "unusual texture behavior",
+  jpeg: "compression artifacts",
+  metadata: "missing or unusual camera metadata",
+};
+
+const STRUCTURAL_MODULES = [
+  "boundary",
+  "patch_consistency",
+  "patch_repetition",
+  "edge",
+  "noise_rgb",
+  "frequency",
+  "texture",
+  "jpeg",
+];
 
 function getConfiguredApiBaseUrl() {
   return window.APP_CONFIG?.API_BASE_URL?.trim() || "";
@@ -45,6 +81,61 @@ function normalizeApiBaseUrl(url) {
 function updateApiSettingsDisplay() {
   apiBaseUrlInput.value = apiBaseUrl;
   activeApiUrlText.textContent = `Active API URL: ${apiBaseUrl}`;
+}
+
+function getProgressMessage(value) {
+  return PROGRESS_MESSAGES.reduce((currentMessage, stage) => {
+    if (value >= stage.min) {
+      return stage.text;
+    }
+
+    return currentMessage;
+  }, PROGRESS_MESSAGES[0].text);
+}
+
+function updateProgress(value) {
+  progressValue = Math.max(0, Math.min(100, value));
+  const roundedValue = Math.round(progressValue);
+  progressFill.style.width = `${roundedValue}%`;
+  progressPercent.textContent = `${roundedValue}%`;
+  loadingMessage.textContent = getProgressMessage(progressValue);
+}
+
+function showLoadingOverlay() {
+  loadingOverlay.classList.remove("is-hidden");
+  updateProgress(5);
+
+  progressTimer = window.setInterval(() => {
+    const remaining = 90 - progressValue;
+    const step = Math.max(0.4, remaining * 0.08);
+    updateProgress(Math.min(90, progressValue + step));
+  }, 450);
+}
+
+function hideLoadingOverlay() {
+  if (progressTimer) {
+    window.clearInterval(progressTimer);
+    progressTimer = null;
+  }
+
+  loadingOverlay.classList.add("is-hidden");
+  updateProgress(0);
+}
+
+function completeLoadingOverlay() {
+  if (progressTimer) {
+    window.clearInterval(progressTimer);
+    progressTimer = null;
+  }
+
+  updateProgress(100);
+
+  return new Promise((resolve) => {
+    window.setTimeout(() => {
+      hideLoadingOverlay();
+      resolve();
+    }, 350);
+  });
 }
 
 function setLoading(isLoading) {
@@ -112,11 +203,55 @@ function renderSummaryReasons(reasons) {
   summaryBlock.classList.remove("is-hidden");
 }
 
+function parseReason(reason) {
+  const separatorIndex = reason.indexOf(":");
+  if (separatorIndex === -1) {
+    return {
+      moduleName: "",
+      detail: reason.trim(),
+    };
+  }
+
+  return {
+    moduleName: reason.slice(0, separatorIndex).trim(),
+    detail: reason.slice(separatorIndex + 1).trim(),
+  };
+}
+
+function readableReason(parsedReason) {
+  const moduleLabel = REASON_LABELS[parsedReason.moduleName];
+  if (moduleLabel) {
+    return moduleLabel;
+  }
+
+  return parsedReason.detail.toLowerCase().replace(/\.$/, "");
+}
+
+function buildUserExplanation(result) {
+  const reasons = Array.isArray(result.summary_reasons) ? result.summary_reasons : [];
+  const parsedReasons = reasons.map(parseReason).filter((reason) => reason.detail);
+  const structuralReasons = parsedReasons.filter((reason) => STRUCTURAL_MODULES.includes(reason.moduleName));
+  const preferredReasons = structuralReasons.length > 0
+    ? structuralReasons
+    : parsedReasons.filter((reason) => reason.moduleName === "metadata");
+  const readableReasons = [...new Set(preferredReasons.map(readableReason))].slice(0, 2);
+
+  if (readableReasons.length === 0) {
+    return result.explanation || "The result is based on combined forensic image signals.";
+  }
+
+  if (readableReasons.length === 1) {
+    return `The estimate is mainly based on ${readableReasons[0]}.`;
+  }
+
+  return `The estimate is mainly based on ${readableReasons[0]} and ${readableReasons[1]}.`;
+}
+
 function renderResult(result) {
   verdictValue.textContent = result.verdict ?? "Unavailable";
   scoreValue.textContent = formatScore(result.final_score);
   confidenceValue.textContent = result.confidence ?? "Unavailable";
-  explanationText.textContent = result.explanation ?? "The result is based on combined forensic image signals.";
+  explanationText.textContent = buildUserExplanation(result);
   disclaimerText.textContent = result.disclaimer ?? "This is a forensic estimate, not absolute proof.";
 
   renderModuleScores(result.module_scores);
@@ -134,6 +269,7 @@ async function analyzeSelectedImage() {
   clearResult();
   showError("");
   setLoading(true);
+  showLoadingOverlay();
 
   const formData = new FormData();
   formData.append("file", selectedFile);
@@ -152,8 +288,10 @@ async function analyzeSelectedImage() {
       throw new Error(detail);
     }
 
+    await completeLoadingOverlay();
     renderResult(payload);
   } catch (error) {
+    hideLoadingOverlay();
     showError(error.message || "Analysis failed. Please check the API URL and try again.");
   } finally {
     setLoading(false);
