@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>AI Image Detector - Pilot</title>
+    <link rel="stylesheet" href="style.css">
+  </head>
+  <body>
+    <main class="page-shell">
+      <section class="intro">
+        <span class="beta-label">Pilot / Beta</span>
+        <h1>AI Image Detector - Pilot</h1>
+        <p>
+          Upload an image to receive a forensic estimate based on image structure,
+          visual consistency, and metadata signals. This pilot tool is designed for
+          testing and feedback, and it does not provide absolute proof.
+        </p>
+        <p>
+          Uploaded images are processed by the analysis backend during pilot testing.
+        </p>
+      </section>
+
+      <section class="panel settings-panel" aria-labelledby="settings-title">
+        <details>
+          <summary id="settings-title">Testing configuration</summary>
+          <p>
+            Pilot testers can point this page to a Cloud Run backend without editing the site files.
+          </p>
+          <label class="settings-label" for="apiBaseUrlInput">API base URL</label>
+          <div class="settings-row">
+            <input id="apiBaseUrlInput" type="url" placeholder="https://your-service.run.app">
+            <button id="saveApiUrlButton" type="button">Save URL</button>
+          </div>
+          <p id="activeApiUrlText" class="config-note"></p>
+        </details>
+      </section>
+
+      <section class="panel upload-panel" aria-labelledby="upload-title">
+        <div>
+          <h2 id="upload-title">Upload Image</h2>
+          <p>Choose a JPG, PNG, WebP, BMP, or TIFF image.</p>
+        </div>
+
+        <label class="file-picker" for="imageInput">
+          <span id="fileLabel">Select an image</span>
+          <input id="imageInput" type="file" accept="image/jpeg,image/png,image/webp,image/bmp,image/tiff">
+        </label>
+
+        <button id="analyzeButton" type="button" disabled>Analyze</button>
+        <p id="statusText" class="status-text" role="status" aria-live="polite"></p>
+        <p id="errorText" class="error-text" role="alert"></p>
+      </section>
+
+      <section id="previewPanel" class="panel preview-panel is-hidden" aria-labelledby="preview-title">
+        <h2 id="preview-title">Preview</h2>
+        <img id="imagePreview" alt="Selected image preview">
+      </section>
+
+      <section id="resultPanel" class="panel result-panel is-hidden" aria-labelledby="result-title">
+        <h2 id="result-title">Result</h2>
+        <div class="result-grid">
+          <div>
+            <span class="label">Verdict</span>
+            <strong id="verdictValue"></strong>
+          </div>
+          <div>
+            <span class="label">Final Score</span>
+            <strong id="scoreValue"></strong>
+          </div>
+          <div>
+            <span class="label">Confidence</span>
+            <strong id="confidenceValue"></strong>
+          </div>
+        </div>
+        <p id="explanationText" class="explanation"></p>
+        <p id="disclaimerText" class="disclaimer"></p>
+      </section>
+
+      <section id="advancedPanel" class="panel advanced-panel is-hidden" aria-labelledby="advanced-title">
+        <h2 id="advanced-title">Advanced Details</h2>
+        <div>
+          <h3>Module Scores</h3>
+          <dl id="moduleScores" class="score-list"></dl>
+        </div>
+        <div id="summaryBlock" class="summary-block is-hidden">
+          <h3>Summary Reasons</h3>
+          <ul id="summaryReasons"></ul>
+        </div>
+      </section>
+
+      <footer class="footer-note">
+        <strong>Pilot / Beta</strong>
+        <span>Results are forensic estimates, not absolute proof. Feedback welcome during pilot testing.</span>
+      </footer>
+    </main>
+
+    <script src="config.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>
