@@ -1,5 +1,6 @@
 const FALLBACK_API_BASE_URL = "https://YOUR_CLOUD_RUN_URL";
 const API_BASE_URL_STORAGE_KEY = "AI_DETECTOR_API_BASE_URL";
+const DEVICE_ID_STORAGE_KEY = "AI_DETECTOR_DEVICE_ID";
 
 const imageInput = document.querySelector("#imageInput");
 const fileLabel = document.querySelector("#fileLabel");
@@ -33,6 +34,7 @@ const feedbackMessage = document.querySelector("#feedbackMessage");
 let selectedFile = null;
 let previewUrl = null;
 let apiBaseUrl = getApiBaseUrl();
+let deviceId = getOrCreateDeviceId();
 let progressTimer = null;
 let progressValue = 0;
 let currentResult = null;
@@ -82,6 +84,27 @@ function getApiBaseUrl() {
 
 function normalizeApiBaseUrl(url) {
   return url.trim().replace(/\/+$/, "");
+}
+
+function generateDeviceId() {
+  if (window.crypto?.randomUUID) {
+    return window.crypto.randomUUID();
+  }
+
+  const values = new Uint32Array(4);
+  window.crypto.getRandomValues(values);
+  return Array.from(values, (value) => value.toString(16).padStart(8, "0")).join("-");
+}
+
+function getOrCreateDeviceId() {
+  const storedDeviceId = localStorage.getItem(DEVICE_ID_STORAGE_KEY);
+  if (storedDeviceId) {
+    return storedDeviceId;
+  }
+
+  const nextDeviceId = generateDeviceId();
+  localStorage.setItem(DEVICE_ID_STORAGE_KEY, nextDeviceId);
+  return nextDeviceId;
 }
 
 function updateApiSettingsDisplay() {
@@ -343,6 +366,9 @@ async function analyzeSelectedImage() {
     const activeApiBaseUrl = normalizeApiBaseUrl(apiBaseUrl);
     const response = await fetch(`${activeApiBaseUrl}/analyze`, {
       method: "POST",
+      headers: {
+        "X-Device-ID": deviceId,
+      },
       body: formData,
     });
 
