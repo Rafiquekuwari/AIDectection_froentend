@@ -239,6 +239,39 @@ button:disabled {
   font-weight: 700;
 }
 
+.feedback-panel {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.feedback-panel h3 {
+  margin-bottom: 12px;
+}
+
+.feedback-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.feedback-actions button {
+  min-height: 42px;
+  padding: 0 14px;
+  background: #334155;
+}
+
+.feedback-actions button:hover:not(:disabled) {
+  background: #1f2937;
+}
+
+.feedback-message {
+  min-height: 24px;
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-weight: 700;
+}
+
 .score-list {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -383,5 +416,9 @@ button:disabled {
 
   .settings-row {
     grid-template-columns: 1fr;
+  }
+
+  .feedback-actions {
+    display: grid;
   }
 }

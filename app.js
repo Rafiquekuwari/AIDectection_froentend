@@ -25,12 +25,18 @@ const loadingOverlay = document.querySelector("#loadingOverlay");
 const loadingMessage = document.querySelector("#loadingMessage");
 const progressFill = document.querySelector("#progressFill");
 const progressPercent = document.querySelector("#progressPercent");
+const feedbackPanel = document.querySelector("#feedbackPanel");
+const feedbackCorrectButton = document.querySelector("#feedbackCorrectButton");
+const feedbackIncorrectButton = document.querySelector("#feedbackIncorrectButton");
+const feedbackMessage = document.querySelector("#feedbackMessage");
 
 let selectedFile = null;
 let previewUrl = null;
 let apiBaseUrl = getApiBaseUrl();
 let progressTimer = null;
 let progressValue = 0;
+let currentResult = null;
+let feedbackSubmitted = false;
 
 const PROGRESS_MESSAGES = [
   { min: 0, text: "Uploading image..." },
@@ -152,14 +158,19 @@ function showError(message) {
 function clearResult() {
   resultPanel.classList.add("is-hidden");
   advancedPanel.classList.add("is-hidden");
+  feedbackPanel.classList.add("is-hidden");
   verdictValue.textContent = "";
   scoreValue.textContent = "";
   confidenceValue.textContent = "";
   explanationText.textContent = "";
   disclaimerText.textContent = "";
+  feedbackMessage.textContent = "";
   moduleScores.replaceChildren();
   summaryReasons.replaceChildren();
   summaryBlock.classList.add("is-hidden");
+  currentResult = null;
+  feedbackSubmitted = false;
+  setFeedbackButtonsDisabled(false);
 }
 
 function formatScore(value) {
@@ -248,6 +259,8 @@ function buildUserExplanation(result) {
 }
 
 function renderResult(result) {
+  currentResult = result;
+  feedbackSubmitted = false;
   verdictValue.textContent = result.verdict ?? "Unavailable";
   scoreValue.textContent = formatScore(result.final_score);
   confidenceValue.textContent = result.confidence ?? "Unavailable";
@@ -259,6 +272,58 @@ function renderResult(result) {
 
   resultPanel.classList.remove("is-hidden");
   advancedPanel.classList.remove("is-hidden");
+  feedbackPanel.classList.remove("is-hidden");
+  feedbackMessage.textContent = "";
+  setFeedbackButtonsDisabled(false);
+}
+
+function setFeedbackButtonsDisabled(isDisabled) {
+  feedbackCorrectButton.disabled = isDisabled;
+  feedbackIncorrectButton.disabled = isDisabled;
+}
+
+async function submitFeedback(feedbackValue) {
+  if (!currentResult || feedbackSubmitted) {
+    return;
+  }
+
+  const requestId = currentResult.request_id;
+  const verdict = currentResult.verdict;
+
+  if (!requestId || !verdict) {
+    feedbackMessage.textContent = "Feedback is unavailable for this result.";
+    return;
+  }
+
+  feedbackSubmitted = true;
+  setFeedbackButtonsDisabled(true);
+  feedbackMessage.textContent = "Sending feedback...";
+
+  try {
+    const activeApiBaseUrl = normalizeApiBaseUrl(apiBaseUrl);
+    const response = await fetch(`${activeApiBaseUrl}/feedback`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        request_id: requestId,
+        verdict,
+        feedback: feedbackValue,
+      }),
+    });
+
+    if (!response.ok) {
+      const payload = await response.json().catch(() => null);
+      throw new Error(payload?.detail || "Feedback could not be sent.");
+    }
+
+    feedbackMessage.textContent = "Thank you for the feedback.";
+  } catch (error) {
+    feedbackSubmitted = false;
+    setFeedbackButtonsDisabled(false);
+    feedbackMessage.textContent = error.message || "Feedback could not be sent.";
+  }
 }
 
 async function analyzeSelectedImage() {
@@ -340,5 +405,7 @@ saveApiUrlButton.addEventListener("click", () => {
   statusText.textContent = "API URL saved for this browser.";
 });
 
+feedbackCorrectButton.addEventListener("click", () => submitFeedback("correct"));
+feedbackIncorrectButton.addEventListener("click", () => submitFeedback("incorrect"));
 analyzeButton.addEventListener("click", analyzeSelectedImage);
 updateApiSettingsDisplay();

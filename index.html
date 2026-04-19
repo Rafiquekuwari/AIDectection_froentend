@@ -75,6 +75,14 @@
         </div>
         <p id="explanationText" class="explanation"></p>
         <p id="disclaimerText" class="disclaimer"></p>
+        <div id="feedbackPanel" class="feedback-panel is-hidden">
+          <h3>Was this result helpful/correct?</h3>
+          <div class="feedback-actions">
+            <button id="feedbackCorrectButton" type="button" data-feedback="correct">👍 Looks correct</button>
+            <button id="feedbackIncorrectButton" type="button" data-feedback="incorrect">👎 Looks incorrect</button>
+          </div>
+          <p id="feedbackMessage" class="feedback-message" aria-live="polite"></p>
+        </div>
       </section>
 
       <section id="advancedPanel" class="panel advanced-panel is-hidden" aria-labelledby="advanced-title">
