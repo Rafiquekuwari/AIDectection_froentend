@@ -52,6 +52,12 @@
         <p id="errorText" class="error-text" role="alert"></p>
       </section>
 
+      <section id="errorPanel" class="panel error-panel is-hidden" aria-labelledby="errorTitle">
+        <h2 id="errorTitle">Analysis could not be completed</h2>
+        <p id="errorMessage"></p>
+        <p id="errorDetail" class="error-detail"></p>
+      </section>
+
       <section id="previewPanel" class="panel preview-panel is-hidden" aria-labelledby="preview-title">
         <h2 id="preview-title">Preview</h2>
         <img id="imagePreview" alt="Selected image preview">
@@ -74,6 +80,10 @@
           </div>
         </div>
         <p id="explanationText" class="explanation"></p>
+        <div class="why-section">
+          <h3>Why this result?</h3>
+          <ul id="whyResultList" class="why-list"></ul>
+        </div>
         <p id="disclaimerText" class="disclaimer"></p>
         <div id="feedbackPanel" class="feedback-panel is-hidden">
           <h3>Was this result helpful/correct?</h3>
@@ -86,14 +96,22 @@
       </section>
 
       <section id="advancedPanel" class="panel advanced-panel is-hidden" aria-labelledby="advanced-title">
-        <h2 id="advanced-title">Advanced Details</h2>
-        <div>
-          <h3>Module Scores</h3>
-          <dl id="moduleScores" class="score-list"></dl>
+        <div class="advanced-header">
+          <h2 id="advanced-title">Advanced Details</h2>
+          <button id="advancedToggleButton" type="button" class="secondary-button" aria-expanded="false">
+            Show technical details
+          </button>
         </div>
-        <div id="summaryBlock" class="summary-block is-hidden">
-          <h3>Summary Reasons</h3>
-          <ul id="summaryReasons"></ul>
+        <div id="advancedContent" class="advanced-content is-hidden">
+          <div>
+            <h3>Signal overview</h3>
+            <div id="moduleScores" class="score-list"></div>
+          </div>
+          <div id="summaryBlock" class="summary-block is-hidden">
+            <h3>Technical signals</h3>
+            <p class="technical-note">These are low-level forensic signals and should not be treated as final proof on their own.</p>
+            <ul id="summaryReasons"></ul>
+          </div>
         </div>
       </section>
 

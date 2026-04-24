@@ -1,12 +1,17 @@
 const FALLBACK_API_BASE_URL = "https://YOUR_CLOUD_RUN_URL";
 const API_BASE_URL_STORAGE_KEY = "AI_DETECTOR_API_BASE_URL";
 const DEVICE_ID_STORAGE_KEY = "AI_DETECTOR_DEVICE_ID";
+const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
 
 const imageInput = document.querySelector("#imageInput");
 const fileLabel = document.querySelector("#fileLabel");
 const analyzeButton = document.querySelector("#analyzeButton");
 const statusText = document.querySelector("#statusText");
 const errorText = document.querySelector("#errorText");
+const errorPanel = document.querySelector("#errorPanel");
+const errorTitle = document.querySelector("#errorTitle");
+const errorMessage = document.querySelector("#errorMessage");
+const errorDetail = document.querySelector("#errorDetail");
 const previewPanel = document.querySelector("#previewPanel");
 const imagePreview = document.querySelector("#imagePreview");
 const resultPanel = document.querySelector("#resultPanel");
@@ -30,6 +35,9 @@ const feedbackPanel = document.querySelector("#feedbackPanel");
 const feedbackCorrectButton = document.querySelector("#feedbackCorrectButton");
 const feedbackIncorrectButton = document.querySelector("#feedbackIncorrectButton");
 const feedbackMessage = document.querySelector("#feedbackMessage");
+const whyResultList = document.querySelector("#whyResultList");
+const advancedToggleButton = document.querySelector("#advancedToggleButton");
+const advancedContent = document.querySelector("#advancedContent");
 
 let selectedFile = null;
 let previewUrl = null;
@@ -39,6 +47,7 @@ let progressTimer = null;
 let progressValue = 0;
 let currentResult = null;
 let feedbackSubmitted = false;
+let inactivityTimer = null;
 
 const PROGRESS_MESSAGES = [
   { min: 0, text: "Uploading image..." },
@@ -48,15 +57,27 @@ const PROGRESS_MESSAGES = [
 ];
 
 const REASON_LABELS = {
-  boundary: "unusual boundary behavior",
-  patch_consistency: "locally consistent synthetic-looking structure",
+  metadata: "camera-origin evidence is limited or missing",
+  boundary: "unusual object and edge transition patterns",
+  patch_consistency: "locally uniform or synthetic-looking structure",
   patch_repetition: "repeated fine texture patterns",
+  noise_rgb: "unusual noise behavior",
+  frequency: "unusual frequency-domain structure",
+  jpeg: "compression-pattern irregularities",
+  texture: "unusual texture statistics",
   edge: "unusual edge behavior",
-  noise_rgb: "synthetic-looking noise patterns",
-  frequency: "unusual frequency-domain patterns",
-  texture: "unusual texture behavior",
-  jpeg: "compression artifacts",
-  metadata: "missing or unusual camera metadata",
+};
+
+const MODULE_LABELS = {
+  metadata: "Camera metadata",
+  noise_rgb: "Noise pattern",
+  frequency: "Frequency structure",
+  texture: "Texture statistics",
+  patch_consistency: "Local structure consistency",
+  patch_repetition: "Repeated pattern signal",
+  boundary: "Boundary transition signal",
+  edge: "Edge behavior",
+  jpeg: "Compression pattern",
 };
 
 const STRUCTURAL_MODULES = [
@@ -69,6 +90,45 @@ const STRUCTURAL_MODULES = [
   "texture",
   "jpeg",
 ];
+
+const ERROR_MESSAGES = {
+  MISSING_FILENAME: {
+    title: "Upload issue",
+    message: "Please choose a supported and valid image file.",
+  },
+  UNSUPPORTED_FILE_TYPE: {
+    title: "Unsupported file type",
+    message: "Please choose a supported and valid image file.",
+  },
+  FILE_TOO_LARGE: {
+    title: "File is too large",
+    message: "Please choose a smaller image file and try again.",
+  },
+  INVALID_IMAGE: {
+    title: "Invalid image",
+    message: "Please choose a supported and valid image file.",
+  },
+  IMAGE_TOO_LARGE_DIMENSIONS: {
+    title: "Image dimensions are too large",
+    message: "Please choose a smaller image and try again.",
+  },
+  RATE_LIMITED: {
+    title: "Too many requests",
+    message: "Please wait a moment and try again.",
+  },
+  DAILY_LIMIT_REACHED: {
+    title: "Daily pilot limit reached",
+    message: "You have reached the daily pilot limit. Please try again tomorrow.",
+  },
+  ANALYSIS_FAILED: {
+    title: "Service temporarily unavailable",
+    message: "The analysis service is temporarily unavailable. Please try again shortly.",
+  },
+  SERVER_TEMPORARILY_UNAVAILABLE: {
+    title: "Service temporarily unavailable",
+    message: "The analysis service is temporarily unavailable. Please try again shortly.",
+  },
+};
 
 function getConfiguredApiBaseUrl() {
   return window.APP_CONFIG?.API_BASE_URL?.trim() || "";
@@ -174,26 +234,128 @@ function setLoading(isLoading) {
   statusText.textContent = isLoading ? "Analyzing..." : "";
 }
 
-function showError(message) {
-  errorText.textContent = message;
+function hideError() {
+  errorText.textContent = "";
+  errorPanel.classList.add("is-hidden");
+  errorTitle.textContent = "Analysis could not be completed";
+  errorMessage.textContent = "";
+  errorDetail.textContent = "";
+}
+
+function showError(message, title = "Analysis could not be completed", detail = "") {
+  errorText.textContent = "";
+  errorTitle.textContent = title;
+  errorMessage.textContent = message;
+  errorDetail.textContent = detail;
+  errorPanel.classList.remove("is-hidden");
+}
+
+function buildBackendError(payload) {
+  const errorCode = payload?.error_code;
+  const backendDetail = payload?.detail || "";
+  const mappedError = ERROR_MESSAGES[errorCode] || {
+    title: "Analysis could not be completed",
+    message: backendDetail || "Please try again shortly.",
+  };
+
+  return {
+    title: mappedError.title,
+    message: mappedError.message,
+    detail: backendDetail,
+  };
+}
+
+function buildNetworkError() {
+  return {
+    title: "Unable to reach server",
+    message: "Unable to reach the analysis server. Please check your internet connection and try again.",
+    detail: "",
+  };
+}
+
+function buildInvalidResponseError() {
+  return {
+    title: "Invalid server response",
+    message: "The server returned an invalid response. Please try again.",
+    detail: "",
+  };
+}
+
+function buildRenderError() {
+  return {
+    title: "Result display issue",
+    message: "The analysis completed, but the result could not be displayed properly.",
+    detail: "",
+  };
 }
 
 function clearResult() {
   resultPanel.classList.add("is-hidden");
   advancedPanel.classList.add("is-hidden");
   feedbackPanel.classList.add("is-hidden");
+  advancedContent.classList.add("is-hidden");
+  advancedToggleButton.setAttribute("aria-expanded", "false");
+  advancedToggleButton.textContent = "Show technical details";
   verdictValue.textContent = "";
   scoreValue.textContent = "";
   confidenceValue.textContent = "";
   explanationText.textContent = "";
   disclaimerText.textContent = "";
   feedbackMessage.textContent = "";
+  whyResultList.replaceChildren();
   moduleScores.replaceChildren();
   summaryReasons.replaceChildren();
   summaryBlock.classList.add("is-hidden");
   currentResult = null;
   feedbackSubmitted = false;
   setFeedbackButtonsDisabled(false);
+}
+
+function clearAnalysisStateForNewRequest() {
+  clearResult();
+  hideError();
+  hideLoadingOverlay();
+  updateProgress(0);
+  statusText.textContent = "";
+}
+
+function clearSelectedFile() {
+  selectedFile = null;
+  imageInput.value = "";
+  fileLabel.textContent = "Select an image";
+  analyzeButton.disabled = true;
+
+  if (previewUrl) {
+    URL.revokeObjectURL(previewUrl);
+    previewUrl = null;
+  }
+
+  imagePreview.removeAttribute("src");
+  previewPanel.classList.add("is-hidden");
+}
+
+function resetSessionDueToInactivity() {
+  console.log("[session] reset due to inactivity");
+  hideLoadingOverlay();
+  setLoading(false);
+  clearSelectedFile();
+  clearResult();
+  hideError();
+  statusText.textContent = "Session reset due to inactivity.";
+}
+
+function resetInactivityTimer() {
+  if (inactivityTimer) {
+    window.clearTimeout(inactivityTimer);
+  }
+
+  inactivityTimer = window.setTimeout(resetSessionDueToInactivity, INACTIVITY_TIMEOUT_MS);
+}
+
+function registerActivityListeners() {
+  ["mousedown", "touchstart", "keydown", "scroll", "click"].forEach((eventName) => {
+    window.addEventListener(eventName, resetInactivityTimer, { passive: true });
+  });
 }
 
 function formatScore(value) {
@@ -209,13 +371,28 @@ function renderModuleScores(scores) {
 
   Object.entries(scores || {}).forEach(([name, value]) => {
     const row = document.createElement("div");
-    const label = document.createElement("dt");
-    const score = document.createElement("dd");
+    const header = document.createElement("div");
+    const label = document.createElement("span");
+    const score = document.createElement("span");
+    const level = document.createElement("span");
+    const track = document.createElement("div");
+    const fill = document.createElement("div");
 
-    label.textContent = name.replaceAll("_", " ");
+    row.className = "signal-row";
+    header.className = "signal-row-header";
+    label.className = "signal-label";
+    score.className = "signal-score";
+    level.className = "signal-level";
+    track.className = "signal-bar-track";
+    fill.className = "signal-bar-fill";
+
+    label.textContent = MODULE_LABELS[name] || name.replaceAll("_", " ");
     score.textContent = formatScore(value);
-
-    row.append(label, score);
+    level.textContent = getAnomalyLevel(value);
+    fill.style.width = `${Math.max(0, Math.min(100, Number(value || 0) * 100))}%`;
+    track.append(fill);
+    header.append(label, score, level);
+    row.append(header, track);
     moduleScores.append(row);
   });
 }
@@ -261,6 +438,65 @@ function readableReason(parsedReason) {
   return parsedReason.detail.toLowerCase().replace(/\.$/, "");
 }
 
+function getAnomalyLevel(value) {
+  const numericValue = Number(value || 0);
+  if (numericValue < 0.25) {
+    return "Low";
+  }
+  if (numericValue < 0.45) {
+    return "Moderate";
+  }
+  if (numericValue < 0.65) {
+    return "Elevated";
+  }
+  return "High";
+}
+
+function buildReasonBullets(result) {
+  const reasons = Array.isArray(result.summary_reasons) ? result.summary_reasons : [];
+  const parsedReasons = reasons.map(parseReason).filter((reason) => reason.detail);
+  const structuralReasons = parsedReasons.filter((reason) => STRUCTURAL_MODULES.includes(reason.moduleName));
+  const metadataReasons = parsedReasons.filter((reason) => reason.moduleName === "metadata");
+  const chosenReasons = [...structuralReasons.slice(0, 2)];
+
+  if (chosenReasons.length < 3 && metadataReasons.length > 0) {
+    chosenReasons.push(metadataReasons[0]);
+  }
+
+  const uniqueBullets = [...new Set(chosenReasons.map((reason) => buildReadableBullet(reason)))].slice(0, 3);
+  return uniqueBullets.length > 0
+    ? uniqueBullets
+    : [
+        "Multiple forensic signals were combined to estimate the result.",
+        "This assessment should be treated as guidance rather than proof.",
+      ];
+}
+
+function buildReadableBullet(parsedReason) {
+  switch (parsedReason.moduleName) {
+    case "boundary":
+      return "Detected unusual edge and object transition behavior.";
+    case "patch_consistency":
+      return "Some local regions appear unusually uniform or synthetic-looking.";
+    case "patch_repetition":
+      return "Repeated fine-detail patterns appear across parts of the image.";
+    case "edge":
+      return "Edge behavior looks less natural than expected.";
+    case "noise_rgb":
+      return "Noise behavior does not fully match a typical camera image.";
+    case "frequency":
+      return "Underlying frequency structure appears unusual.";
+    case "jpeg":
+      return "Compression patterns show irregular behavior.";
+    case "texture":
+      return "Texture statistics look less natural than expected.";
+    case "metadata":
+      return "Camera-origin evidence is limited, which is treated as supporting evidence only.";
+    default:
+      return parsedReason.detail.replace(/\.$/, "") + ".";
+  }
+}
+
 function buildUserExplanation(result) {
   const reasons = Array.isArray(result.summary_reasons) ? result.summary_reasons : [];
   const parsedReasons = reasons.map(parseReason).filter((reason) => reason.detail);
@@ -271,14 +507,14 @@ function buildUserExplanation(result) {
   const readableReasons = [...new Set(preferredReasons.map(readableReason))].slice(0, 2);
 
   if (readableReasons.length === 0) {
-    return result.explanation || "The result is based on combined forensic image signals.";
+    return "This estimate is based on a combination of image-structure and authenticity signals.";
   }
 
   if (readableReasons.length === 1) {
-    return `The estimate is mainly based on ${readableReasons[0]}.`;
+    return `This result is primarily driven by ${readableReasons[0]}.`;
   }
 
-  return `The estimate is mainly based on ${readableReasons[0]} and ${readableReasons[1]}.`;
+  return `This result is primarily driven by ${readableReasons[0]} and ${readableReasons[1]}.`;
 }
 
 function renderResult(result) {
@@ -289,6 +525,12 @@ function renderResult(result) {
   confidenceValue.textContent = result.confidence ?? "Unavailable";
   explanationText.textContent = buildUserExplanation(result);
   disclaimerText.textContent = result.disclaimer ?? "This is a forensic estimate, not absolute proof.";
+  whyResultList.replaceChildren();
+  buildReasonBullets(result).forEach((bulletText) => {
+    const item = document.createElement("li");
+    item.textContent = bulletText;
+    whyResultList.append(item);
+  });
 
   renderModuleScores(result.module_scores);
   renderSummaryReasons(result.summary_reasons);
@@ -338,14 +580,14 @@ async function submitFeedback(feedbackValue) {
 
     if (!response.ok) {
       const payload = await response.json().catch(() => null);
-      throw new Error(payload?.detail || "Feedback could not be sent.");
+      throw new Error(payload?.detail || "Feedback could not be sent. Please try again.");
     }
 
     feedbackMessage.textContent = "Thank you for the feedback.";
   } catch (error) {
     feedbackSubmitted = false;
     setFeedbackButtonsDisabled(false);
-    feedbackMessage.textContent = error.message || "Feedback could not be sent.";
+    feedbackMessage.textContent = "Feedback could not be sent. Please try again.";
   }
 }
 
@@ -354,8 +596,12 @@ async function analyzeSelectedImage() {
     return;
   }
 
-  clearResult();
-  showError("");
+  console.log("[analyze] request started", {
+    filename: selectedFile.name,
+    size: selectedFile.size,
+  });
+
+  clearAnalysisStateForNewRequest();
   setLoading(true);
   showLoadingOverlay();
 
@@ -364,48 +610,101 @@ async function analyzeSelectedImage() {
 
   try {
     const activeApiBaseUrl = normalizeApiBaseUrl(apiBaseUrl);
-    const response = await fetch(`${activeApiBaseUrl}/analyze`, {
-      method: "POST",
-      headers: {
-        "X-Device-ID": deviceId,
-      },
-      body: formData,
-    });
+    let response;
 
-    const payload = await response.json().catch(() => null);
-
-    if (!response.ok) {
-      const detail = payload?.detail || "Analysis failed. Please try another image.";
-      throw new Error(detail);
+    try {
+      response = await fetch(`${activeApiBaseUrl}/analyze`, {
+        method: "POST",
+        headers: {
+          "X-Device-ID": deviceId,
+        },
+        body: formData,
+      });
+    } catch (error) {
+      console.error("[analyze] request failed before response", error);
+      const friendlyError = buildNetworkError();
+      showError(friendlyError.message, friendlyError.title, friendlyError.detail);
+      return;
     }
 
+    console.log("[analyze] response received", {
+      ok: response.ok,
+      status: response.status,
+      statusText: response.statusText,
+    });
+
+    let responseText;
+    try {
+      responseText = await response.text();
+    } catch (error) {
+      console.error("[analyze] response text read failed", error);
+      const friendlyError = buildNetworkError();
+      showError(friendlyError.message, friendlyError.title, friendlyError.detail);
+      return;
+    }
+
+    console.log("[analyze] response text read", {
+      length: responseText.length,
+    });
+
+    let payload;
+    try {
+      payload = JSON.parse(responseText);
+    } catch (error) {
+      console.error("[analyze] JSON parse failed", error);
+      const friendlyError = buildInvalidResponseError();
+      showError(friendlyError.message, friendlyError.title, friendlyError.detail);
+      return;
+    }
+
+    console.log("[analyze] JSON parsed", {
+      hasErrorCode: Boolean(payload?.error_code),
+      hasVerdict: Boolean(payload?.verdict),
+      requestId: payload?.request_id || null,
+    });
+
+    if (!response.ok) {
+      const friendlyError = buildBackendError(payload);
+      showError(friendlyError.message, friendlyError.title, friendlyError.detail);
+      return;
+    }
+
+    try {
+      renderResult(payload);
+    } catch (error) {
+      console.error("[analyze] UI render failed", error);
+      clearResult();
+      const friendlyError = buildRenderError();
+      showError(friendlyError.message, friendlyError.title, friendlyError.detail);
+      return;
+    }
+
+    console.log("[analyze] UI rendered", {
+      requestId: payload?.request_id || null,
+      verdict: payload?.verdict || null,
+    });
     await completeLoadingOverlay();
-    renderResult(payload);
-  } catch (error) {
-    hideLoadingOverlay();
-    showError(error.message || "Analysis failed. Please check the API URL and try again.");
   } finally {
+    hideLoadingOverlay();
     setLoading(false);
   }
 }
 
 imageInput.addEventListener("change", () => {
+  resetInactivityTimer();
   selectedFile = imageInput.files?.[0] || null;
   clearResult();
-  showError("");
+  hideError();
   statusText.textContent = "";
+
+  if (!selectedFile) {
+    clearSelectedFile();
+    return;
+  }
 
   if (previewUrl) {
     URL.revokeObjectURL(previewUrl);
     previewUrl = null;
-  }
-
-  if (!selectedFile) {
-    fileLabel.textContent = "Select an image";
-    previewPanel.classList.add("is-hidden");
-    imagePreview.removeAttribute("src");
-    analyzeButton.disabled = true;
-    return;
   }
 
   fileLabel.textContent = selectedFile.name;
@@ -416,6 +715,7 @@ imageInput.addEventListener("change", () => {
 });
 
 saveApiUrlButton.addEventListener("click", () => {
+  resetInactivityTimer();
   const nextApiBaseUrl = normalizeApiBaseUrl(apiBaseUrlInput.value);
 
   if (!nextApiBaseUrl) {
@@ -427,11 +727,29 @@ saveApiUrlButton.addEventListener("click", () => {
   }
 
   updateApiSettingsDisplay();
-  showError("");
+  hideError();
   statusText.textContent = "API URL saved for this browser.";
 });
 
-feedbackCorrectButton.addEventListener("click", () => submitFeedback("correct"));
-feedbackIncorrectButton.addEventListener("click", () => submitFeedback("incorrect"));
-analyzeButton.addEventListener("click", analyzeSelectedImage);
+feedbackCorrectButton.addEventListener("click", () => {
+  resetInactivityTimer();
+  submitFeedback("correct");
+});
+feedbackIncorrectButton.addEventListener("click", () => {
+  resetInactivityTimer();
+  submitFeedback("incorrect");
+});
+advancedToggleButton.addEventListener("click", () => {
+  resetInactivityTimer();
+  const isExpanded = advancedToggleButton.getAttribute("aria-expanded") === "true";
+  advancedToggleButton.setAttribute("aria-expanded", String(!isExpanded));
+  advancedToggleButton.textContent = isExpanded ? "Show technical details" : "Hide technical details";
+  advancedContent.classList.toggle("is-hidden", isExpanded);
+});
+analyzeButton.addEventListener("click", () => {
+  resetInactivityTimer();
+  analyzeSelectedImage();
+});
 updateApiSettingsDisplay();
+registerActivityListeners();
+resetInactivityTimer();
