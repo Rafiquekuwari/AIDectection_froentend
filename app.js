@@ -1,4 +1,5 @@
-const FALLBACK_API_BASE_URL = "https://YOUR_CLOUD_RUN_URL";
+const LOCAL_API_BASE_URL = "http://127.0.0.1:8080";
+const PRODUCTION_API_BASE_URL = "https://ai-image-detector-api-12513320995.us-central1.run.app";
 const API_BASE_URL_STORAGE_KEY = "AI_DETECTOR_API_BASE_URL";
 const DEVICE_ID_STORAGE_KEY = "AI_DETECTOR_DEVICE_ID";
 const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
@@ -41,7 +42,7 @@ const advancedContent = document.querySelector("#advancedContent");
 
 let selectedFile = null;
 let previewUrl = null;
-let apiBaseUrl = getApiBaseUrl();
+let apiBaseUrl = resolveApiBaseUrl();
 let deviceId = getOrCreateDeviceId();
 let progressTimer = null;
 let progressValue = 0;
@@ -138,12 +139,43 @@ function getStoredApiBaseUrl() {
   return localStorage.getItem(API_BASE_URL_STORAGE_KEY)?.trim() || "";
 }
 
-function getApiBaseUrl() {
-  return getConfiguredApiBaseUrl() || getStoredApiBaseUrl() || FALLBACK_API_BASE_URL;
-}
-
 function normalizeApiBaseUrl(url) {
   return url.trim().replace(/\/+$/, "");
+}
+
+function isPlaceholderApiBaseUrl(url) {
+  if (!url) {
+    return false;
+  }
+
+  return /your_cloud_run_url/i.test(url);
+}
+
+function getEnvironmentFallbackApiBaseUrl() {
+  const hostname = window.location.hostname.toLowerCase();
+  if (hostname === "localhost" || hostname === "127.0.0.1") {
+    return LOCAL_API_BASE_URL;
+  }
+
+  return PRODUCTION_API_BASE_URL;
+}
+
+function resolveApiBaseUrl() {
+  const configuredApiBaseUrl = normalizeApiBaseUrl(getConfiguredApiBaseUrl());
+  if (configuredApiBaseUrl && !isPlaceholderApiBaseUrl(configuredApiBaseUrl)) {
+    console.log(`[config] API base URL resolved: ${configuredApiBaseUrl}`);
+    return configuredApiBaseUrl;
+  }
+
+  const storedApiBaseUrl = normalizeApiBaseUrl(getStoredApiBaseUrl());
+  if (storedApiBaseUrl && !isPlaceholderApiBaseUrl(storedApiBaseUrl)) {
+    console.log(`[config] API base URL resolved: ${storedApiBaseUrl}`);
+    return storedApiBaseUrl;
+  }
+
+  const fallbackApiBaseUrl = getEnvironmentFallbackApiBaseUrl();
+  console.log(`[config] API base URL resolved: ${fallbackApiBaseUrl}`);
+  return fallbackApiBaseUrl;
 }
 
 function generateDeviceId() {
@@ -718,14 +750,13 @@ saveApiUrlButton.addEventListener("click", () => {
   resetInactivityTimer();
   const nextApiBaseUrl = normalizeApiBaseUrl(apiBaseUrlInput.value);
 
-  if (!nextApiBaseUrl) {
+  if (!nextApiBaseUrl || isPlaceholderApiBaseUrl(nextApiBaseUrl)) {
     localStorage.removeItem(API_BASE_URL_STORAGE_KEY);
-    apiBaseUrl = getConfiguredApiBaseUrl() || FALLBACK_API_BASE_URL;
   } else {
     localStorage.setItem(API_BASE_URL_STORAGE_KEY, nextApiBaseUrl);
-    apiBaseUrl = nextApiBaseUrl;
   }
 
+  apiBaseUrl = resolveApiBaseUrl();
   updateApiSettingsDisplay();
   hideError();
   statusText.textContent = "API URL saved for this browser.";
