@@ -18,9 +18,11 @@ const imagePreview = document.querySelector("#imagePreview");
 const resultPanel = document.querySelector("#resultPanel");
 const advancedPanel = document.querySelector("#advancedPanel");
 const verdictValue = document.querySelector("#verdictValue");
+const verdictBadge = document.querySelector("#verdictBadge");
 const scoreValue = document.querySelector("#scoreValue");
 const confidenceValue = document.querySelector("#confidenceValue");
 const explanationText = document.querySelector("#explanationText");
+const technicalVerdictText = document.querySelector("#technicalVerdictText");
 const disclaimerText = document.querySelector("#disclaimerText");
 const moduleScores = document.querySelector("#moduleScores");
 const summaryBlock = document.querySelector("#summaryBlock");
@@ -328,10 +330,14 @@ function clearResult() {
   advancedContent.classList.add("is-hidden");
   advancedToggleButton.setAttribute("aria-expanded", "false");
   advancedToggleButton.textContent = "Show technical details";
+  delete resultPanel.dataset.tone;
   verdictValue.textContent = "";
+  verdictBadge.textContent = "";
+  verdictBadge.classList.add("is-hidden");
   scoreValue.textContent = "";
   confidenceValue.textContent = "";
   explanationText.textContent = "";
+  technicalVerdictText.textContent = "";
   disclaimerText.textContent = "";
   feedbackMessage.textContent = "";
   whyResultList.replaceChildren();
@@ -549,13 +555,63 @@ function buildUserExplanation(result) {
   return `This result is primarily driven by ${readableReasons[0]} and ${readableReasons[1]}.`;
 }
 
+function getUserFriendlyVerdict(result) {
+  const technicalVerdict = result?.verdict ?? "Unavailable";
+
+  if (technicalVerdict === "Likely AI-generated") {
+    return {
+      title: "Likely AI-generated",
+      badge: "AI-like signals detected",
+      tone: "ai",
+      explanation: "Multiple forensic signals suggest this image may be AI-generated.",
+      technicalVerdict,
+    };
+  }
+
+  if (technicalVerdict === "Likely real-camera image") {
+    return {
+      title: "Likely camera-origin image",
+      badge: "Camera-origin evidence found",
+      tone: "real",
+      explanation: "Camera-origin evidence is strong and major AI-like signals were not strong enough.",
+      technicalVerdict,
+    };
+  }
+
+  let explanation = "Signals are mixed and do not show enough independent agreement for a firm AI or real-camera label.";
+
+  if (result?.input_channel === "screenshot_like") {
+    explanation = "Screenshot-like image detected. Screenshots do not preserve original camera evidence, so this result needs review.";
+  } else if (result?.input_channel === "recompressed_social_like") {
+    explanation = "Reposted or compressed image detected. WhatsApp/social-media processing can remove or alter forensic traces, so the system avoided a firm AI/real label.";
+  } else if (result?.weak_near_original_evidence === true || result?.processed_camera_guard_applied === true) {
+    explanation = "Camera metadata is present, but processing or compression signals weaken trust in it. Review is recommended.";
+  } else if (Number(result?.processing_history_score || 0) >= 0.5 || result?.likely_recompressed === true) {
+    explanation = "This image appears processed or recompressed, which can reduce the reliability of forensic signals.";
+  }
+
+  return {
+    title: "Review required",
+    badge: "Origin cannot be confirmed",
+    tone: "review",
+    explanation,
+    technicalVerdict,
+  };
+}
+
 function renderResult(result) {
   currentResult = result;
   feedbackSubmitted = false;
-  verdictValue.textContent = result.verdict ?? "Unavailable";
+  const friendlyVerdict = getUserFriendlyVerdict(result);
+
+  resultPanel.dataset.tone = friendlyVerdict.tone;
+  verdictValue.textContent = friendlyVerdict.title;
+  verdictBadge.textContent = friendlyVerdict.badge;
+  verdictBadge.classList.remove("is-hidden");
   scoreValue.textContent = formatScore(result.final_score);
   confidenceValue.textContent = result.confidence ?? "Unavailable";
-  explanationText.textContent = buildUserExplanation(result);
+  explanationText.textContent = friendlyVerdict.explanation;
+  technicalVerdictText.textContent = `Technical verdict: ${friendlyVerdict.technicalVerdict}`;
   disclaimerText.textContent = result.disclaimer ?? "This is a forensic estimate, not absolute proof.";
   whyResultList.replaceChildren();
   buildReasonBullets(result).forEach((bulletText) => {

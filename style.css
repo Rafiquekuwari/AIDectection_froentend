@@ -8,6 +8,7 @@
   --accent: #0f766e;
   --accent-strong: #0b5f59;
   --danger: #b42318;
+  --review: #b45309;
   --warning-bg: #fff7e6;
   --warning-text: #7a4b00;
 }
@@ -245,10 +246,72 @@ button:disabled {
   font-size: 1.05rem;
 }
 
+.verdict-card {
+  position: relative;
+}
+
+.verdict-badge {
+  display: inline-flex;
+  align-items: center;
+  margin-top: 10px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.result-panel[data-tone="ai"] .verdict-card {
+  border-color: #f0b4ad;
+  background: #fff8f7;
+}
+
+.result-panel[data-tone="ai"] #verdictValue {
+  color: var(--danger);
+}
+
+.result-panel[data-tone="ai"] .verdict-badge {
+  background: #fdecea;
+  color: var(--danger);
+}
+
+.result-panel[data-tone="real"] .verdict-card {
+  border-color: #99d4cc;
+  background: #eefaf7;
+}
+
+.result-panel[data-tone="real"] #verdictValue {
+  color: var(--accent-strong);
+}
+
+.result-panel[data-tone="real"] .verdict-badge {
+  background: #dff7f1;
+  color: #07524c;
+}
+
+.result-panel[data-tone="review"] .verdict-card {
+  border-color: #f3d08a;
+  background: #fff9ec;
+}
+
+.result-panel[data-tone="review"] #verdictValue {
+  color: var(--review);
+}
+
+.result-panel[data-tone="review"] .verdict-badge {
+  background: #fff1cc;
+  color: var(--review);
+}
+
 .explanation {
   margin-bottom: 10px;
   color: var(--text);
   font-size: 1.02rem;
+}
+
+.technical-verdict {
+  margin-bottom: 14px;
+  color: var(--muted);
+  font-size: 0.92rem;
 }
 
 .disclaimer {

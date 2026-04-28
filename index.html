@@ -66,9 +66,10 @@
       <section id="resultPanel" class="panel result-panel is-hidden" aria-labelledby="result-title">
         <h2 id="result-title">Result</h2>
         <div class="result-grid">
-          <div>
+          <div class="verdict-card">
             <span class="label">Verdict</span>
             <strong id="verdictValue"></strong>
+            <span id="verdictBadge" class="verdict-badge is-hidden"></span>
           </div>
           <div>
             <span class="label">Final Score</span>
@@ -80,6 +81,7 @@
           </div>
         </div>
         <p id="explanationText" class="explanation"></p>
+        <p id="technicalVerdictText" class="technical-verdict"></p>
         <div class="why-section">
           <h3>Why this result?</h3>
           <ul id="whyResultList" class="why-list"></ul>
