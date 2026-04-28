@@ -587,6 +587,32 @@ function getUserFriendlyVerdict(result) {
     };
   }
 
+  const lowRiskProcessedUncertain =
+    technicalVerdict === "Uncertain / mixed evidence"
+    && Number(result?.final_score || 0) < 0.5
+    && ["recompressed_social_like", "screenshot_like", "unknown"].includes(result?.input_channel)
+    && result?.ai_pattern_cluster !== true
+    && result?.strong_structural_cluster !== true
+    && result?.very_strong_ai_evidence !== true;
+
+  if (lowRiskProcessedUncertain) {
+    let explanation = "This image does not show enough strong AI evidence, but it appears compressed, reposted, or screenshot-like. The system cannot fully verify its original camera origin.";
+
+    if (result?.input_channel === "screenshot_like" && Number(result?.screenshot_likelihood_score || 0) >= 0.65) {
+      explanation = "This looks like a screenshot or screen-exported image. Screenshots do not preserve original camera evidence, so the system cannot confirm whether it came directly from a camera.";
+    } else if (Number(result?.processing_history_score || 0) >= 0.5 || result?.likely_recompressed === true) {
+      explanation = "This image appears processed or recompressed. It may still be a real photo, but original camera evidence is weakened.";
+    }
+
+    return {
+      title: "Possibly real, but processed",
+      badge: "Original source unclear",
+      tone: "review",
+      explanation,
+      technicalVerdict,
+    };
+  }
+
   let explanation = "Signals are mixed and do not show enough independent agreement for a firm AI or real-camera label.";
 
   if (result?.input_channel === "screenshot_like") {
