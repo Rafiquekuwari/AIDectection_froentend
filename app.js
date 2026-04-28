@@ -3,6 +3,7 @@ const PRODUCTION_API_BASE_URL = "https://ai-image-detector-api-12513320995.us-ce
 const API_BASE_URL_STORAGE_KEY = "AI_DETECTOR_API_BASE_URL";
 const DEVICE_ID_STORAGE_KEY = "AI_DETECTOR_DEVICE_ID";
 const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
+const ANALYZE_TIMEOUT_MS = 300 * 1000;
 
 const imageInput = document.querySelector("#imageInput");
 const fileLabel = document.querySelector("#fileLabel");
@@ -311,6 +312,14 @@ function buildInvalidResponseError() {
   return {
     title: "Invalid server response",
     message: "The server returned an invalid response. Please try again.",
+    detail: "",
+  };
+}
+
+function buildTimeoutError() {
+  return {
+    title: "Analysis timed out",
+    message: "Analysis took too long. Please try again with a smaller image.",
     detail: "",
   };
 }
@@ -684,7 +693,7 @@ async function analyzeSelectedImage() {
     return;
   }
 
-  console.log("[analyze] request started", {
+  console.log("Analyze request started", {
     filename: selectedFile.name,
     size: selectedFile.size,
   });
@@ -695,66 +704,42 @@ async function analyzeSelectedImage() {
 
   const formData = new FormData();
   formData.append("file", selectedFile);
+  const controller = new AbortController();
+  const timeoutId = window.setTimeout(() => {
+    controller.abort(new DOMException("Analyze timeout", "AbortError"));
+  }, ANALYZE_TIMEOUT_MS);
 
   try {
     const activeApiBaseUrl = normalizeApiBaseUrl(apiBaseUrl);
-    let response;
+    const response = await fetch(`${activeApiBaseUrl}/analyze`, {
+      method: "POST",
+      headers: {
+        "X-Device-ID": deviceId,
+      },
+      body: formData,
+      signal: controller.signal,
+    });
 
-    try {
-      response = await fetch(`${activeApiBaseUrl}/analyze`, {
-        method: "POST",
-        headers: {
-          "X-Device-ID": deviceId,
-        },
-        body: formData,
-      });
-    } catch (error) {
-      console.error("[analyze] request failed before response", error);
-      const friendlyError = buildNetworkError();
-      showError(friendlyError.message, friendlyError.title, friendlyError.detail);
-      return;
-    }
-
-    console.log("[analyze] response received", {
+    console.log("Analyze response received", {
       ok: response.ok,
       status: response.status,
       statusText: response.statusText,
     });
 
-    let responseText;
-    try {
-      responseText = await response.text();
-    } catch (error) {
-      console.error("[analyze] response text read failed", error);
-      const friendlyError = buildNetworkError();
-      showError(friendlyError.message, friendlyError.title, friendlyError.detail);
-      return;
+    const responseText = await response.text();
+
+    let payload = null;
+    if (responseText) {
+      try {
+        payload = JSON.parse(responseText);
+      } catch (error) {
+        console.error("[analyze] JSON parse failed", error);
+        throw buildInvalidResponseError();
+      }
     }
-
-    console.log("[analyze] response text read", {
-      length: responseText.length,
-    });
-
-    let payload;
-    try {
-      payload = JSON.parse(responseText);
-    } catch (error) {
-      console.error("[analyze] JSON parse failed", error);
-      const friendlyError = buildInvalidResponseError();
-      showError(friendlyError.message, friendlyError.title, friendlyError.detail);
-      return;
-    }
-
-    console.log("[analyze] JSON parsed", {
-      hasErrorCode: Boolean(payload?.error_code),
-      hasVerdict: Boolean(payload?.verdict),
-      requestId: payload?.request_id || null,
-    });
 
     if (!response.ok) {
-      const friendlyError = buildBackendError(payload);
-      showError(friendlyError.message, friendlyError.title, friendlyError.detail);
-      return;
+      throw buildBackendError(payload);
     }
 
     try {
@@ -762,9 +747,7 @@ async function analyzeSelectedImage() {
     } catch (error) {
       console.error("[analyze] UI render failed", error);
       clearResult();
-      const friendlyError = buildRenderError();
-      showError(friendlyError.message, friendlyError.title, friendlyError.detail);
-      return;
+      throw buildRenderError();
     }
 
     console.log("[analyze] UI rendered", {
@@ -772,9 +755,33 @@ async function analyzeSelectedImage() {
       verdict: payload?.verdict || null,
     });
     await completeLoadingOverlay();
+  } catch (error) {
+    console.error("Analyze request failed", error);
+
+    if (error?.name === "AbortError") {
+      const friendlyError = buildTimeoutError();
+      showError(friendlyError.message, friendlyError.title, friendlyError.detail);
+      return;
+    }
+
+    if (error?.title && error?.message) {
+      showError(error.message, error.title, error.detail || "");
+      return;
+    }
+
+    if (error instanceof TypeError) {
+      const friendlyError = buildNetworkError();
+      showError(friendlyError.message, friendlyError.title, friendlyError.detail);
+      return;
+    }
+
+    const friendlyError = buildNetworkError();
+    showError(friendlyError.message, friendlyError.title, friendlyError.detail);
   } finally {
+    window.clearTimeout(timeoutId);
     hideLoadingOverlay();
     setLoading(false);
+    console.log("Analyze request finished");
   }
 }
 
